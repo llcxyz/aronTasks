@@ -1,7 +1,11 @@
-# aronTasks
-odoo 与 celery 集成  odoo with celery support
-
-原文见 : https://www.aron9g.com/2018/08/08/Odoo%E4%B8%8ECelery%E9%9B%86%E6%88%90.html
+---
+title: Odoo与实时分布式任务系统Celery集成
+date: 2018-08-07 23:06:29
+categories: 码苑杂谈
+tags:
+- Odoo
+- Celery
+thumbnail: http://image.bubuko.com/info/201807/20180718223649676116.png
 
 ---
 ### [Odoo](https://www.odoo.com/zh_CN/)
@@ -17,7 +21,7 @@ Celery 是一个简单、灵活且可靠的，处理大量消息的分布式系�
 ### [aronTasks](https://github.com/llcxyz/aronTasks)
 aronTask就是odoo和celery的粘合剂.方便开发人员快速将celery应用到自己的odoo项目中.已有的项目只需要添加一个装饰器,
 便可将任务变成异步处理.同步和异步处理可自由切换.
-
+<!-- more -->
 ### Odoo 为什么需要 Celery
 答案是任何需要异步处理的场合,celery都可以胜任。
 1. 处理耗时任务
@@ -34,13 +38,21 @@ celery与odoo集成在github上有多个项目方案.经过我实测试.发现�
 故结合这些项目的优缺点与自己的理解.重造了一个轮子[aronTask](), 目前已用在生产环境中.运行稳定。
 
 #### 准备工作.
-在你自己的odoo配置文件中增加以下几行.
+
+在同目录下创建celeryconfig.py 
+配置如下:
 ```conf
 
-celery_broker_url = pyamqp://aron:aron@127.0.0.1//  # 使用rabbitMQ 作为broker
-celery_backend_url=redis://127.0.0.1:6379/1   # 使用redis保存结果.
-enable_celery_task=True  # 是否启用celery.
-
+# coding: utf-8
+broker_url = 'redis://192.168.80.200:6379/0'
+task_serializer = 'json'
+task_routes = {'feed.tasks.import_feed': {'queue': 'feeds'}}
+task_ignore_result = False
+result_backend = 'redis://192.168.80.200:6379/1'
+enable_celery_task = True
+task_default_queue = 'aronTasks'
+app_name = 'projectA'
+event_queue_prefix = "*"
 ```
 ####   Step 1 挂载装饰器.
 在odoo模型上直接挂载装饰器.celeryTask.
@@ -98,91 +110,30 @@ class CampusApi(http.Controller):
 
 
 ####   Step 3 运行 odooCelery 实例.
-在启动celery worker 之前.我们需要编写自定义的引导worker. 先初始化odoo.让所有celery task都被注册上.
+引入aronTask编写自定义的引导worker. 先初始化odoo.让所有celery task都被注册上.
 
-odooCelery.py
+新建文件名为 myOdooWorker.py
+
 ```python
-# coding:utf-8
-import sys
 
-import os
-import openerp
-import logging
-from celery import Celery
-from openerp.api import Environment
-from openerp.modules.registry import Registry
-from openerp.modules.registry import RegistryManager
-
-app = Celery('odooCeleryTask')
-
-app.config_from_object('celeryconfig')
-
-odoo_loaded = False
-
-_logger = logging.getLogger('odooCelery')
-
-
-def start_odoo():
-    config_file = ".celery.odoo.conf" #  这个文件内保存 odoo 的配置文件路径.以便根据此配置文件启动odoo服务.
-    with open(config_file, "r") as r:
-        config_file = r.readline().strip().replace("\n", "")
-        _logger.info("loading config file: %s " % config_file)
-
-    argv = ["-c", config_file]
-    openerp.tools.config.parse_config(argv)
-    openerp.netsvc.init_logger()
-    openerp.modules.module.initialize_sys_path()
-    openerp.multi_process = True # 多进程模式.
-    db_name = openerp.tools.config['db_name']
-    preload_registry([db_name]) # 这个地方先初始化db.让celery 的task 全部注册上去.
-    odoo_loaded = True
-
-
-def preload_registry(dbnames):
-    """ Preload a registry, and start the cron."""
-    config = openerp.tools.config
-    for dbname in dbnames:
-        try:
-            print "preload registery[%s] dbname=%s" % (os.getpid(), dbname)
-            update_module = config['init'] or config['update']
-            modules = {}
-            if config['init']:
-                m = config['init'].split(",")
-                for i in m:
-                    modules[i] = True
-
-                config['init'] = modules
-
-            elif config['update']:
-                m = config['update'].split(",")
-                for i in m:
-                    modules[i] = True
-
-                config['update'] = modules
-
-            registry = RegistryManager.new(dbname, update_module=update_module)
-
-        except Exception:
-            _logger.exception('Failed to initialize database `%s`.', dbname)
-
-
-start_odoo()
-
+#coding:utf-8
+from aronTasks import odooCelery
 if __name__ == "__main__":
-    app.start()
+    odooCelery.start()
 
 
 
 ```
 启动实例:
 ```bash
-[root@simple3 ~]# python odooCelery.py worker -Q campus.tasks.orm -n host1 --loglevel=DEBUG --concurrency=4
+[root@simple3 ~]# python myOdooWorker.py my_odoo.conf worker -Q campus.tasks.orm -n host1 --loglevel=DEBUG --concurrency=4
 ```
 
-启动4个进程.处理celery任务. 同时监听队列: campus.tasks.orm
+启动4个进程.处理celery任务. 同时监听队列: campus.tasks.orm, celeryWorker在启动前，先根据my_odoo.conf的odoo配置文件初始化odoo实例.
+
 ### 最后
-**使用aronTasks的 celeryTask. 所有任务名称是以 [模型].[函数名] 组成.
-比如示例的 present_voucher 方法.最后对应到celery的task name 是: res.users.present_voucher,
+**使用aronTasks的 celeryTask. 所有任务名称是以 [app_name][模型].[函数名] 组成.
+比如示例的 present_voucher 方法.最后对应到celery的task name 是: projectA[res.users].present_voucher,
 这样的好处是对celery任务的管理更加方便.如果使用Flower 来监控与管理任务.会更清晰的看到具体的任务执行情况.**
 
 
@@ -215,13 +166,6 @@ if __name__ == "__main__":
         逝去时间 
 * expires
         过期时间
-priority
+* priority
         优先级
-
-
-
-
-    
-
-
-
+        
