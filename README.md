@@ -1,13 +1,4 @@
----
-title: Odoo与实时分布式任务系统Celery集成
-date: 2018-08-07 23:06:29
-categories: 码苑杂谈
-tags:
-- Odoo
-- Celery
-thumbnail: http://image.bubuko.com/info/201807/20180718223649676116.png
 
----
 ### [Odoo](https://www.odoo.com/zh_CN/)
 Odoo 是一系列开源商业应用套件,通过不同的模块组合,可以满足大部分企业应用场景.
     比如ERP,CRM,WMS,在线商店,企业网站等等..., 同时其底层的基础应用框架.非常强大和灵活.
