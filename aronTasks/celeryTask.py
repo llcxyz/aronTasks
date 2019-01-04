@@ -332,10 +332,10 @@ class celeryTask(Task):
                              autoretry_for=self.autoretry_for,
                              ignore_result=self.ignore_result,
                              retry_kwargs={'max_retries': self.max_retries}, default_retry_delay=60, retry_backoff=True)
-
-        self.task.on_retry = aronBackGroundTask.on_retry
-        self.task.on_success = aronBackGroundTask.on_success
-        self.task.on_failure = aronBackGroundTask.on_failure
+        if self.baseTask:
+            self.task.on_retry = self.baseTask.on_retry
+            self.task.on_success = self.baseTask.on_success
+            self.task.on_failure = self.baseTask.on_failure
 
         app.register_task(self.task)
 
@@ -393,7 +393,7 @@ class celeryTask(Task):
                 else:
                     model = env[obj]
                     if api_name == 'model' or api_name == 'multi' or api_name == 'one':
-                        if args:
+                        if args and len(args) > 0:
                             obj_ids = args.pop(0)
                     if obj_ids:
                         recs = model.browse(obj_ids)
